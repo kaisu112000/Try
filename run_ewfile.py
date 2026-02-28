@@ -1,45 +1,33 @@
-"""
-Automation script to run ewfile.py with phone numbers from Lamix CSV.
-
-Features:
-- Skips already processed numbers (processed.txt)
-- Runs 5 batches in parallel
-- Saves successful numbers automatically
-- Resume supported
-"""
-
-import csv
+import os
 import subprocess
 import sys
 import time
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ================= CONFIG =================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_FILE = os.path.join(SCRIPT_DIR, "Lamix SMS  My SMS Numbers.csv")
+TXT_FILE = os.path.join(SCRIPT_DIR, "n.txt")
 PROCESSED_FILE = os.path.join(SCRIPT_DIR, "processed.txt")
 
 BATCH_SIZE = 5
 MAX_PARALLEL = 5
 TIMEOUT_PER_BATCH = 300
 WAIT_BETWEEN_BATCHES = 1
-# ==========================================
+# ===========================================
 
 
-# ---------- Load Numbers from CSV ----------
-def load_numbers(csv_path):
+# -------- Load Numbers from TXT --------
+def load_numbers(txt_path):
     numbers = []
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            num = row["Number"].strip().strip('"')
+    with open(txt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            num = line.strip()
             if num:
                 numbers.append(num)
     return numbers
 
 
-# ---------- Load Processed Numbers ----------
+# -------- Load Processed Numbers --------
 def load_processed():
     if not os.path.exists(PROCESSED_FILE):
         return set()
@@ -48,25 +36,24 @@ def load_processed():
         return set(line.strip() for line in f if line.strip())
 
 
-# ---------- Save Processed ----------
+# -------- Save Processed --------
 def save_processed(batch):
     with open(PROCESSED_FILE, "a", encoding="utf-8") as f:
         for num in batch:
             f.write(num + "\n")
 
 
-# ---------- Run Batch ----------
+# -------- Run Batch --------
 def run_batch(batch, batch_num, total_batches):
-    print(f"\n{'='*60}")
-    print(f"  >>> BATCH {batch_num}/{total_batches}")
-    print(f"  >>> Numbers: {batch}")
-    print(f"{'='*60}")
+    print(f"\n====== BATCH {batch_num}/{total_batches} ======")
+    print(f"Numbers: {batch}")
+    print("=" * 40)
 
-    stdin_text = "\n".join(batch) + "\n\n\n"
+    stdin_text = "\n".join(batch) + "\n\n"
 
     try:
         proc = subprocess.Popen(
-            ["python", "ewfile.py"],   # Termux safe
+            ["python3.12", "new.py"],
             cwd=SCRIPT_DIR,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -78,49 +65,45 @@ def run_batch(batch, batch_num, total_batches):
 
         stdout, _ = proc.communicate(input=stdin_text, timeout=TIMEOUT_PER_BATCH)
 
-        if stdout:
-            for line in stdout.splitlines():
-                print(f"  | {line}")
+        print(stdout)
 
         if proc.returncode != 0:
-            print(f"  [!] Batch exited with code {proc.returncode}")
+            print("[!] Batch exited with error code", proc.returncode)
             return -1
 
-        print("  ✔ Batch Completed Successfully")
+        print("✔ Batch Completed Successfully")
         return 0
 
     except subprocess.TimeoutExpired:
         proc.kill()
-        print("  [!] Batch Timed Out")
+        print("[!] Batch Timed Out")
         return -1
 
     except Exception as e:
-        print(f"  [!] Error: {e}")
+        print("[!] Error:", e)
         return -1
 
 
-# ---------- MAIN ----------
+# -------- MAIN --------
 def main():
 
-    if not os.path.exists(CSV_FILE):
-        print(f"[ERROR] CSV not found: {CSV_FILE}")
+    if not os.path.exists(TXT_FILE):
+        print(f"[ERROR] TXT not found: {TXT_FILE}")
         sys.exit(1)
 
-    numbers = load_numbers(CSV_FILE)
-    print(f"[INFO] Loaded {len(numbers)} numbers from CSV")
+    numbers = load_numbers(TXT_FILE)
+    print(f"[INFO] Loaded {len(numbers)} numbers from TXT")
 
     if not numbers:
         print("[ERROR] No numbers found!")
         sys.exit(1)
 
-    # Load processed
     processed_numbers = load_processed()
     original_count = len(numbers)
 
     numbers = [n for n in numbers if n not in processed_numbers]
 
     skipped = original_count - len(numbers)
-
     print(f"[INFO] Skipped {skipped} already processed numbers")
     print(f"[INFO] Remaining to process: {len(numbers)}")
 
@@ -135,11 +118,10 @@ def main():
     ]
 
     total_batches = len(batches)
-
     success = 0
     failed = 0
 
-    print(f"[INFO] Running {total_batches} batches (5 parallel workers)\n")
+    print(f"\n[INFO] Running {total_batches} batches ({MAX_PARALLEL} parallel workers)\n")
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as executor:
         futures = {
@@ -161,12 +143,12 @@ def main():
 
             time.sleep(WAIT_BETWEEN_BATCHES)
 
-    print(f"\n{'='*60}")
-    print(f"  DONE")
-    print(f"  Successful Batches: {success}")
-    print(f"  Failed Batches: {failed}")
-    print(f"  Total Numbers Processed This Run: {len(numbers)}")
-    print(f"{'='*60}")
+    print("\n" + "=" * 50)
+    print("DONE")
+    print(f"Successful Batches: {success}")
+    print(f"Failed Batches: {failed}")
+    print(f"Total Numbers Processed This Run: {success * BATCH_SIZE}")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
