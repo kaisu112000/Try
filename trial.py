@@ -389,7 +389,7 @@ class EntryWalaOTPTester:
         
         # Open the website
         logger.info("\n🚀 Opening EntryWala website...")
-        self.driver.get("https://www.entrywala.com")
+        self.driver.get("https://entrywala.com/register")
         
         # Wait for page to load
         time.sleep(5)
